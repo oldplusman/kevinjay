@@ -7,7 +7,6 @@
 	 *         2、暂时只封装了insert, find两个函数
 	 *
 	 */
-
 	class MongoCustomer{
 		protected $mongo; //mongo对象
 		protected $db; //库对象
@@ -46,7 +45,7 @@
 				$this -> db = $this -> chooseDB($configArray['dbname']);
 				$this -> collection = $this -> chooseCollection($configArray['collection']);
 			}catch(MongoConnectionException $e){
-				echo $e->getMessage();
+				writelog('连接mongodb出错：'.$e->getMessage());
 			}
 		}
 		
@@ -64,7 +63,7 @@
 				$this -> db = $db;
 				return $this -> db;
 			}catch(MongoConnectionException $e){
-				echo $e->getMessage();
+				writelog('选择库失败：'.$e->getMessage());
 			}
 		}
 		
@@ -82,7 +81,7 @@
 				$this -> collection = $collection;
 				return $this -> collection;
 			}catch(MongoConnectionException $e){
-				echo $e->getMessage();
+				writelog('选择集合失败：'.$e->getMessage());
 			}
 		}
 		
@@ -104,24 +103,38 @@
 				}	
 				return true;			
 			}catch(Exception $e){
-				echo $e->getMessage();
+				writelog('插入数据失败：'.$e->getMessage());
 				return false;
 			}
 		}
 		
 		/**
 		 * 查询数据
-		 * @param array $selectArray
+		 * @param array $selectArray 查询条件数组
+		 * @param array $sort 排序数组 eg: $sort = array('id'=>1, 'created_time'=>-1) 切记：值只能是数值型 ，不能为字符型或其他类型 （1代 表升序，-1代表降序）
 		 * @throws Exception
 		 */
-		public function select(array $selectArray=array()){
+		public function select(array $selectArray=array(), array $sort=array(), $start=null, $limit=20){
 			try{
 				if(!empty($selectArray) && (count($selectArray)>=0)){
 					if(!$this -> isAssocArray($selectArray)){
 						throw new Exception('参数必须是全关联数组');
 					}
 				}
+				if(!empty($sort) && (count($sort) >= 0)){
+					if(!$this -> isAssocArray($sort)){
+						throw new Exception('参数必须是全关联数组');
+					}
+				}
+				$rs = $this -> checkLinks();
+				if($rs !== true){
+					throw new Exception($rs);
+				}
 				$cursor = $this -> collection -> find($selectArray);
+				($start !== null) && $cursor -> limit($limit) -> skip($start);
+				
+				(!empty($sort)) && $cursor -> sort($sort);
+				
 				if(!$cursor){
 					throw new Exception('查询失败');
 				}
@@ -137,8 +150,71 @@
 				}
 				return $rsArray;			
 			}catch(Exception $e){
-				echo $e->getMessage();
+				writelog('查询数据失败：'.$e->getMessage());
 				return false;
+			}
+		}
+		
+		/**
+		 * 获取查询总数
+		 * @param array $selectArray
+		 * @throws Exception
+		 */
+		public function selectTotal(array $selectArray=array()){
+			try{
+				if(!empty($selectArray) && (count($selectArray)>=0)){
+					if(!$this -> isAssocArray($selectArray)){
+						throw new Exception('参数必须是全关联数组');
+					}
+				}
+				if(!empty($sort) && (count($sort) >= 0)){
+					if(!$this -> isAssocArray($sort)){
+						throw new Exception('参数必须是全关联数组');
+					}
+				}
+				$rs = $this -> checkLinks();
+				if($rs !== true){
+					throw new Exception($rs);
+				}
+				$cursor = $this -> collection -> find($selectArray);		
+				if(!$cursor){
+					throw new Exception('查询失败');
+				}
+				$rsArray = array();
+				foreach($cursor as $key=>$value){
+					$value['_id'] = $this -> object2Array($value['_id']);
+					if(is_array($value['_id']) && (count($value['_id'])>0)){
+						$value['_id'] = $value['_id']['$id'];
+						$rsArray[$value['_id']] = $value;
+					}else{
+						throw new Exception('对象转换成数组失败');
+					}
+				}
+				return count($rsArray);
+			}catch(Exception $e){
+				writelog('查询数据失败：'.$e->getMessage());
+				return false;
+			}
+		}		
+		
+		/**
+		 * 检查创建mongodb对象、mongodb库对象、mongodb集合链接是否正常
+		 * @throws Exception
+		 */
+		protected function checkLinks(){
+			try{
+				if(!is_object($this->mongo)){
+					throw new Exception('Mongo对象创建失败');
+				}
+				if(!is_object($this->db)){
+					throw new Exception('选择mongodb库失败');
+				}
+				if(!is_object($this->collection)){
+					throw new Exception('选择mongodb集合失败');
+				}
+				return true;
+			}catch(Exception $e){
+				return $e->getMessage();
 			}
 		}
 		
